@@ -1,110 +1,107 @@
-import dotenv from "dotenv";
-dotenv.config();
+// services/aiClient.js
+// "AI-lite" implementation without external API, so everything works reliably.
 
-import OpenAI from "openai";
+// 1) Categorize expense based on description keywords
+export async function categorizeExpense(description = "") {
+  const d = description.toLowerCase();
 
-let client = null;
-
-function getClient() {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    console.error("❌ OPENAI_API_KEY is missing. Check your .env file in backend/");
-    throw new Error("OPENAI_API_KEY is missing");
+  if (d.match(/pizza|food|biriyani|lunch|dinner|swiggy|zomato|restaurant/)) {
+    return "food";
+  }
+  if (d.match(/uber|ola|bus|train|flight|cab|taxi|auto/)) {
+    return "travel";
+  }
+  if (d.match(/rent|room|pg|hostel/)) {
+    return "rent";
+  }
+  if (d.match(/electricity|wifi|internet|water|gas|bill/)) {
+    return "utilities";
+  }
+  if (d.match(/shopping|amazon|flipkart|clothes|shoes|mall/)) {
+    return "shopping";
+  }
+  if (d.match(/movie|netflix|prime|party|club/)) {
+    return "entertainment";
+  }
+  if (d.match(/college|fees|books|stationery|exam/)) {
+    return "college";
   }
 
-  if (!client) {
-    client = new OpenAI({ apiKey });
+  return "other";
+}
+
+// 2) Parse natural-language text into expenses using regex
+// Example text:
+// "I paid 1200 for hotel, Rohit paid 600 for dinner, Aman paid 300 for snacks"
+export async function parseNaturalLanguageExpenses(text = "") {
+  const out = [];
+  const pattern = /(\w+)\s+paid\s+(\d+(?:\.\d+)?)\s+(?:for\s+)?([^.,]+)/gi;
+  let match;
+  while ((match = pattern.exec(text)) !== null) {
+    const payerName = match[1];
+    const amount = parseFloat(match[2]);
+    const description = match[3].trim();
+    if (!isNaN(amount)) {
+      out.push({ payerName, amount, description });
+    }
   }
-  return client;
+  return out;
 }
 
-// Helper: call chat model
-async function chat(messages, { maxTokens = 128 } = {}) {
-  const client = getClient();
-  const response = await client.chat.completions.create({
-    model: "gpt-4.1-mini",
-    messages,
-    max_tokens: maxTokens,
-    temperature: 0.2
-  });
-  return response.choices[0].message.content.trim();
-}
-
-// 1) Categorize expense
-export async function categorizeExpense(description) {
-  const prompt = `
-You are an expense classifier. 
-Categories: ["food", "travel", "rent", "utilities", "shopping", "entertainment", "college", "other"].
-Return ONLY one category string.
-
-Description: "${description}"
-  `;
-  const result = await chat([{ role: "user", content: prompt }]);
-  return result.toLowerCase().replace(/[^a-z]/g, "") || "other";
-}
-
-// 2) Parse natural-language trip/group text → multiple expenses
-export async function parseNaturalLanguageExpenses(text) {
-  const prompt = `
-You are an expense parser for a group trip.
-
-Input is a free-form text where people mention who paid how much.
-Return a JSON array of expenses. 
-Each expense: { "payerName": string, "amount": number, "description": string }.
-Do NOT include any extra text, ONLY valid JSON.
-
-Text:
-${text}
-`;
-  const result = await chat([{ role: "user", content: prompt }], {
-    maxTokens: 400
-  });
-
-  try {
-    return JSON.parse(result);
-  } catch (e) {
-    console.error("❌ Failed to parse JSON from AI:", result);
-    return [];
-  }
-}
-
-// 3) Monthly insights summary
+// 3) Generate a simple insights summary text from stats
 export async function generateInsightsSummary(stats) {
-  const prompt = `
-You are a financial assistant. 
-User's monthly group expense stats (JSON) are:
+  const lines = [];
+  const total = stats.total || 0;
+  const count = stats.count || 0;
+  const byCategory = stats.byCategory || {};
 
-${JSON.stringify(stats, null, 2)}
+  lines.push(`Total spent this month: ₹${total.toFixed(2)} across ${count} expenses.`);
 
-Write 3-5 short bullet points (plain text, no markdown) explaining:
-- where they spent the most
-- any spikes vs previous month
-- one or two small suggestions.
+  const entries = Object.entries(byCategory);
+  if (entries.length) {
+    entries.sort((a, b) => b[1] - a[1]);
+    const [topCat, topVal] = entries[0];
+    lines.push(`Highest spending category: ${topCat} (₹${topVal.toFixed(2)}).`);
 
-Keep it under 120 words.
-`;
-  const result = await chat([{ role: "user", content: prompt }], {
-    maxTokens: 220
-  });
-  return result;
+    if (entries.length > 1) {
+      const [secondCat, secondVal] = entries[1];
+      lines.push(
+        `Second highest category: ${secondCat} (₹${secondVal.toFixed(2)}).`
+      );
+    }
+  } else {
+    lines.push("No category breakdown available yet. Add more detailed descriptions.");
+  }
+
+  if (total > 0) {
+    lines.push(
+      "Try setting a simple budget target for your top category and track it weekly."
+    );
+  }
+
+  return lines.join(" ");
 }
 
-// 4) Settlement explanation
+// 4) Explain settlements in plain language
 export async function explainSettlements(transfers, usersMap) {
-  const prompt = `
-You are explaining settlement transfers for splitting group expenses.
+  if (!transfers || !transfers.length) {
+    return "No settlements needed. Everyone is already balanced.";
+  }
 
-Users:
-${JSON.stringify(usersMap, null, 2)}
+  const lines = [];
+  lines.push(
+    "These transfers settle all balances with a minimal number of payments between group members:"
+  );
 
-Transfers (fromId, toId, amount):
-${JSON.stringify(transfers, null, 2)}
-
-Explain in 3-4 short lines why these transfers are minimal and easy,
-and list them in "X pays Y ₹amount" form. Plain text only.
-`;
-  const result = await chat([{ role: "user", content: prompt }], {
-    maxTokens: 200
+  transfers.forEach((t) => {
+    const fromName = usersMap[t.from] || "Someone";
+    const toName = usersMap[t.to] || "Someone";
+    lines.push(`${fromName} pays ${toName} ₹${t.amount.toFixed(2)}.`);
   });
-  return result;
+
+  lines.push(
+    "This pattern minimizes the number of transactions by directly matching people who owe money with those who should receive it."
+  );
+
+  return lines.join("\n");
 }

@@ -110,4 +110,25 @@ router.get("/settlements/:groupId", auth, async (req, res) => {
   }
 });
 
+// DELETE /api/expenses/:id
+router.delete("/:id", auth, async (req, res) => {
+  try {
+    const expense = await Expense.findById(req.params.id).populate("groupId");
+    if (!expense) return res.status(404).json({ message: "Expense not found" });
+
+    const group = expense.groupId;
+    // allow delete only if current user is in the group
+    if (!group.members.map(String).includes(req.user.id)) {
+      return res.status(403).json({ message: "Not allowed" });
+    }
+
+    await Expense.deleteOne({ _id: expense._id });
+    res.json({ message: "Deleted" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+
 export default router;
