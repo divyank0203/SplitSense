@@ -1,11 +1,26 @@
+import dotenv from "dotenv";
+dotenv.config();
+
 import OpenAI from "openai";
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+let client = null;
+
+function getClient() {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    console.error("❌ OPENAI_API_KEY is missing. Check your .env file in backend/");
+    throw new Error("OPENAI_API_KEY is missing");
+  }
+
+  if (!client) {
+    client = new OpenAI({ apiKey });
+  }
+  return client;
+}
 
 // Helper: call chat model
 async function chat(messages, { maxTokens = 128 } = {}) {
+  const client = getClient();
   const response = await client.chat.completions.create({
     model: "gpt-4.1-mini",
     messages,
@@ -48,7 +63,7 @@ ${text}
   try {
     return JSON.parse(result);
   } catch (e) {
-    console.error("Failed to parse JSON from AI:", result);
+    console.error("❌ Failed to parse JSON from AI:", result);
     return [];
   }
 }
