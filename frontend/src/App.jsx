@@ -16,7 +16,7 @@ import {
 import Login from "./pages/Login.jsx";
 import Register from "./pages/Register.jsx";
 import Groups from "./pages/Groups.jsx";
-import GroupView from "./pages/Groupview.jsx";
+import GroupView from "./pages/Groupvview.jsx";
 import Insights from "./pages/Insights.jsx";
 import { SunIcon, MoonIcon } from "@heroicons/react/24/solid";
 
